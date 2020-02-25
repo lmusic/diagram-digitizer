@@ -23,35 +23,24 @@ namespace DiagramDigitizer.Services
             return image;
         }
 
-        private Bitmap ConvertBlueColor(Bitmap image)
-        {
-
-            for (int i = 0; i < image.Width; i++)
-            {
-                for (int j = 0; j < image.Height; j++)
-                {
-                    var pixel = image.GetPixel(i, j);
-                    if (pixel.B > 200 && pixel.G<200 && pixel.R<200)
-                    {
-                        image.SetPixel(i,j, Color.MediumOrchid);
-                    }
-                }
-            }
-
-            return image;
-        }
-
-        private double FindStepOfPixel(Bitmap image)
+      private double[] CalculateValuesInPoints(Bitmap image)
         {
             int maxBlueX = 0;
             int maxGreenX = 0;
-            for (int i = 0; i < image.Width; i++)
+
+            var listOfBluePoints = new List<Point>();
+            var listOfRedPoints = new List<Point>();
+            var result = new double[360];
+
+            for (var i = 0; i < image.Width; i++)
             {
-                for (int j = 0; j < image.Height; j++)
+                for (var j = 0; j < image.Height; j++)
                 {
                     var pixel = image.GetPixel(i, j);
                     if (pixel.B > 200 && pixel.G < 200 && pixel.R < 200)
                     {
+                        listOfBluePoints.Add(new Point(i,j));
+
                         if (maxBlueX < j)
                         {
                             maxBlueX = j;
@@ -64,26 +53,47 @@ namespace DiagramDigitizer.Services
                             maxGreenX = j;
                         }
                     }
-                }
-            }
-
-            var stepOfPixel = Convert.ToDouble(3) / Convert.ToDouble(maxBlueX - maxGreenX);
-            var lengthOfLineFromCenterToRound = maxBlueX - FindCenter(image).X;
-            var maxValueInCenter = lengthOfLineFromCenterToRound * stepOfPixel;
-
-            for (int i = 0; i < image.Width; i++)
-            {
-                for (int j = 0; j < image.Height; j++)
-                {
-                    var pixel = image.GetPixel(i, j);
-                    if (pixel.B > 200 && pixel.G < 200 && pixel.R < 200)
+                    if (pixel.B < 200 && pixel.G < 200 && pixel.R > 200)
                     {
-                        
+                        listOfRedPoints.Add(new Point(i, j));
                     }
                 }
             }
 
-            return 0.1;
+            var stepOfPixel = Convert.ToDouble(3) / Convert.ToDouble(maxBlueX - maxGreenX);
+            var center = FindCenter(listOfRedPoints);
+            var lengthOfLineFromCenterToRound = maxBlueX - center.X;
+            var valueInCenter = lengthOfLineFromCenterToRound * stepOfPixel;
+
+            listOfBluePoints.ForEach(point =>
+            {
+                var angle = GetAngleBetweenPoints(center, point);
+                var valueInPoint = CalculateValueInPoint(stepOfPixel, valueInCenter, center, point);
+                result[Convert.ToInt32(angle)] = valueInPoint;
+                
+            });
+            return result;
+
+        }
+
+        private double CalculateValueInPoint(double stepOfValueForEachPixel, double valueInCenter, Point center, Point point)
+        {
+            var distanceFromCenterToPoint = GetDistanceBetweenPoints(center, point);
+            var valueInPoint = valueInCenter - (distanceFromCenterToPoint * stepOfValueForEachPixel);
+
+            return valueInPoint;
+        }
+
+
+        private double GetAngleBetweenPoints(Point p1, Point p2)
+        {
+            var angle = Math.Atan2(p1.Y - p2.Y, p1.X - p2.X) / Math.PI * 180;
+            return (angle < 0) ? angle + 360 : angle;
+        }
+
+        private double GetDistanceBetweenPoints(Point p1, Point p2)
+        {
+            return Math.Sqrt((p2.X - p1.X) ^ 2 + (p2.Y - p1.Y) ^ 2);
         }
 
         private Bitmap ConvertGreenColor(Bitmap image)
@@ -100,29 +110,15 @@ namespace DiagramDigitizer.Services
             return image;
         }
 
-        public Point FindCenter(Bitmap image)
+        public Point FindCenter(List<Point> listOfRedPoint)
         {
-            var redPixelsList = new List<Point>();
-
-            for (int i = 0; i < image.Width; i++)
-            {
-                for (int j = 0; j < image.Height; j++)
-                {
-                    var pixel = image.GetPixel(i, j);
-                    if (pixel.B < 200 && pixel.G < 200 && pixel.R > 200)
-                    {
-                        redPixelsList.Add(new Point(i, j));
-                    }
-                }
-            }
-
             var minX = int.MaxValue;
             var maxX = int.MinValue;
 
             var minY = int.MaxValue;
             var maxY = int.MinValue;
 
-            redPixelsList.ForEach(point =>
+            listOfRedPoint.ForEach(point =>
             {
                 if (point.X < minX)
                 {
@@ -180,9 +176,13 @@ namespace DiagramDigitizer.Services
             sw.WriteLine(textToWrite);
         }
 
-        private Diagram GenerateDiagram()
+        private Diagram GenerateDiagram(double[] horizontal)
         {
-            var horizontal = new double[360];
+            if (horizontal.Length < 0)
+            {
+                horizontal = new double[360];
+            }
+
             var vertical = new double[360];
 
             for (var i = 0; i < horizontal.Length; i++)
@@ -198,12 +198,8 @@ namespace DiagramDigitizer.Services
         public void HighLightImage()
         {
             var image = ReadImage();
-            var center = FindCenter(image);
-            image.SetPixel(center.X, center.Y, Color.White);
-            var changedImage = ConvertBlueColor(image);
-            changedImage = ConvertGreenColor(changedImage);
-            SaveImage(changedImage);
-            GenerateFile(GenerateDiagram());
+            var result = CalculateValuesInPoints(image);
+            GenerateFile(GenerateDiagram(result));
         }
     }
 }
