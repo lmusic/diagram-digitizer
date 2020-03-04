@@ -12,11 +12,26 @@ namespace DiagramDigitizer.Services
 {
     public class ImageService : IImageService
     {
-        private string _pathToSaveDiagram = "C:\\Users\\lmusic\\Desktop\\diplom\\diagramResultVertical.msi";
+        private string _pathToSaveDiagram = "C:\\Users\\lmusic\\Desktop\\diplom\\diagram.msi";
 
         public ImageService()
         {
             Thread.CurrentThread.CurrentCulture = new CultureInfo("en-US");
+        }
+        public void GetDiagramFile(string name = "new_diagram", int freq = 900, double gain = 17)
+        {
+            var horizontal = ReadImage("horizontal");
+            var vertical = ReadImage("vertical");
+
+            var horizontalPoints = CalculateValuesInPoints(horizontal);
+            var verticalPoints = CalculateValuesInPoints(vertical);
+
+            vertical.Save("C:\\Users\\lmusic\\Desktop\\diplom\\dv.png", ImageFormat.Png);
+            horizontal.Save("C:\\Users\\lmusic\\Desktop\\diplom\\dh.png", ImageFormat.Png);
+
+            var diagram = new Diagram(name, freq, horizontalPoints, verticalPoints, gain, "", "My test diagram");
+
+            GenerateFile(diagram);
         }
 
         private double[] CalculateValuesInPoints(Bitmap image)
@@ -30,31 +45,23 @@ namespace DiagramDigitizer.Services
             //points to make graph
             var listOfBluePoints = GetBluePoints(image);
 
-            // center - center of the diagram,
-            // pointOnRound - point lying on the outer circle in left part of diagram, 
-            // threeDBMLevelPoint - point lying on 3dbm circle in left part of diagram
-            // y-coordinate should be equals for each point
-
-            var center = FindCenter(image);
-            var pointOnRound = FindPointOnRound(image, center);
-            var threeDBMLevelPoint = Find3DBMLevelPoint(pointOnRound, center, image);
-
-            image.SetPixel(center.X, center.Y, Color.Red);
-            image.SetPixel(pointOnRound.X, pointOnRound.Y, Color.Red);
-            image.SetPixel(threeDBMLevelPoint.X, threeDBMLevelPoint.Y, Color.Red);
-
-            SaveImage(image);
-
-            var lengthOfLineFromCenterToRound = center.X - pointOnRound.X;
-            var stepOfPixel = Convert.ToDouble(3) / Convert.ToDouble(threeDBMLevelPoint.X - pointOnRound.X);
-            var listOfValuesForAngle = new SortedList<int, List<double>>();
+            var diagramProperty = GetDiagramImageProperty(image);
+            
+            var listOfValuesForAngle = new Dictionary<int, List<double>>();
 
             listOfBluePoints.ForEach(point =>
             {
-                var angle = GetAngleBetweenPoints(center, point);
+                var angle = GetAngleBetweenPoints(diagramProperty.Center, point);
 
-                var valueInPoint = CalculateValueInPoint(lengthOfLineFromCenterToRound, stepOfPixel, center, point);
+                var valueInPoint = CalculateValueInPoint(
+                        diagramProperty.Radius, 
+                        diagramProperty.StepOfChangingValueForPixel, 
+                        diagramProperty.Center, 
+                        point
+                        );
+
                 var i = Convert.ToInt32(angle);
+
                 if (listOfValuesForAngle.ContainsKey(i))
                 {
                     listOfValuesForAngle[i].Add(valueInPoint);
@@ -65,9 +72,15 @@ namespace DiagramDigitizer.Services
                 }
             });
 
+            return AverageAndInterpolateValues(listOfValuesForAngle);
+
+        }
+
+        private double[] AverageAndInterpolateValues(Dictionary<int, List<double>> valuesForAngles)
+        {
             var result = new double[360];
 
-            foreach (var item in listOfValuesForAngle)
+            foreach (var item in valuesForAngles)
             {
                 double average = 0;
                 item.Value.ForEach(value => { average += value; });
@@ -82,22 +95,37 @@ namespace DiagramDigitizer.Services
                     result[i] = InterpolateValue(i, result);
                 }
             }
+
+            var minValue = result.AsQueryable().First(x => x == result.Min());
+
+            for (var i = 0; i < result.Length; i++)
+            {
+                if (result[i] == minValue)
+                {
+                    result[i] = 0;
+                }
+            }
+
             return result;
-
         }
 
-      public void HighLightImage()
+        private DiagramImageProperty GetDiagramImageProperty(Bitmap image)
         {
-            var image = ReadImage();
-            var result = CalculateValuesInPoints(image);
-            var diagram = GenerateDiagram(result);
-            GenerateFile(diagram);
-        }
+            // center - center of the diagram,
+            // pointOnRound - point lying on the outer circle in left part of diagram, 
+            // threeDBMLevelPoint - point lying on 3dbm circle in left part of diagram
+            // y-coordinate should be equals for each point
 
-      //private DiagramImageProperty GetDiagramImageProperty(Bitmap image)
-      //{
-            
-      //}
+            var center = FindCenter(image);
+            var pointOnRound = FindPointOnRound(image, center); 
+            var threeDBMLevelPoint = Find3DBMLevelPoint(pointOnRound, center, image);
+
+            var lengthOfLineFromCenterToRound = center.X - pointOnRound.X;
+            var stepOfPixel = Convert.ToDouble(3) / Convert.ToDouble(threeDBMLevelPoint.X - pointOnRound.X);
+
+            return new DiagramImageProperty{Center = center, Radius = lengthOfLineFromCenterToRound, StepOfChangingValueForPixel = stepOfPixel};
+
+        }
 
         private Bitmap PrepareImage(Bitmap image)
       {
@@ -107,13 +135,13 @@ namespace DiagramDigitizer.Services
               {
                   var pixel = image.GetPixel(j, i);
 
-                  if (pixel.B > 200 && pixel.G > 200 && pixel.R > 200)
+                  if (pixel.B > 220 && pixel.G > 220 && pixel.R > 220)
                   {
                       image.SetPixel(j, i, Color.White);
                   }
                   else
                   {
-                      if (pixel.B > 240 && pixel.G < 50 && pixel.R < 50)
+                      if (pixel.B > 240 && pixel.G < 70 && pixel.R < 70)
                       {
                           image.SetPixel(j, i, Color.Blue);
                       }
@@ -304,10 +332,10 @@ namespace DiagramDigitizer.Services
 
         }
 
-        private double CalculateValueInPoint(double distanceFromCenterToRound, double stepOfValueForEachPixel, Point center, Point point)
+        private double CalculateValueInPoint(double radius, double stepOfValueForEachPixel, Point center, Point point)
         {
             var distanceFromCenterToPoint = GetDistanceBetweenPoints(center, point);
-            var valueInPoint = (distanceFromCenterToRound - distanceFromCenterToPoint) * stepOfValueForEachPixel;
+            var valueInPoint = (radius - distanceFromCenterToPoint) * stepOfValueForEachPixel;
 
             return valueInPoint;
         }
@@ -329,16 +357,17 @@ namespace DiagramDigitizer.Services
         {
             var textToWrite = "NAME" + " " + diagram.Name + "\r\n";
             textToWrite = textToWrite + "FREQUENCY" + " " + diagram.Frequency + "\r\n";
+            textToWrite = textToWrite + "GAIN" + " " + diagram.Gain + " DBI" + "\r\n";
             textToWrite = textToWrite + "TILT" + " " + diagram.Tilt + "\r\n";
             textToWrite = textToWrite + "COMMENT" + " " + diagram.Comment + "\r\n";
-            textToWrite = textToWrite + "HORIZONTAL" + " " + "\r\n";
+            textToWrite = textToWrite + "HORIZONTAL" + " " + 360 + "\r\n";
 
             for (var i = 0; i < 360; i++)
             {
                 textToWrite = textToWrite + i + " " + diagram.Horizontal[i] + "\r\n";
             }
 
-            textToWrite = textToWrite + "VERTICAL" + "\r\n";
+            textToWrite = textToWrite + "VERTICAL" + 360 + "\r\n";
             for (var i = 0; i < 360; i++)
             {
                 textToWrite = textToWrite + i + " " + diagram.Vertical[i] + "\r\n";
@@ -349,33 +378,9 @@ namespace DiagramDigitizer.Services
             sw.WriteLine(textToWrite);
         }
 
-        //generate diagram for test temp test method
-        private Diagram GenerateDiagram(double[] horizontal)
+        private Bitmap ReadImage(string name)
         {
-            if (horizontal.Length < 0)
-            {
-                horizontal = new double[360];
-            }
-
-            var vertical = new double[360];
-
-            for (var i = 0; i < horizontal.Length; i++)
-            {
-                vertical[i] = Math.Sqrt(i);
-            }
-
-            var diagram = new Diagram("TestName", 1800, horizontal, vertical);
-
-            return diagram;
-        }
-
-        private void SaveImage(Bitmap image)
-        {
-            image.Save(@"C:\\Users\\lmusic\\Desktop\\diplom\\diagram-VerticalCopy.png", ImageFormat.Png);
-        }
-        private Bitmap ReadImage()
-        {
-            var image = new Bitmap("C:\\Users\\lmusic\\Desktop\\diplom\\diagram-vertical.png");
+            var image = new Bitmap("C:\\Users\\lmusic\\Desktop\\diplom\\" + name + ".png");
             return image;
         }
 

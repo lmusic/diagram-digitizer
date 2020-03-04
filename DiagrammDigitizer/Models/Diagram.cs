@@ -5,6 +5,7 @@
         public string Name { get; private set; } = "";
 
         public int Frequency { get; private set; }
+        public double Gain { get; private set; }
         public string Tilt { get; private set; } = "Electrical";
 
         public string Comment { get; private set; } = "";
@@ -18,16 +19,21 @@
 
         }
 
-        public Diagram(string name, int freq, double[] horizontal, double[] vertical, string tilt = "",
+        public Diagram(string name, int freq, double[] horizontal, double[] vertical, double gain, string tilt = "",
             string comment = "")
         {
             Name = name;
             Frequency = freq;
+            Gain = gain;
             Horizontal = horizontal;
             Vertical = vertical;
             if (tilt != "")
             {
                 Tilt = tilt;
+            }
+            else
+            {
+                Tilt = "Electrical";
             }
 
             if (comment != "")

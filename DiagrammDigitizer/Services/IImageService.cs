@@ -7,6 +7,6 @@ namespace DiagramDigitizer.Services
 {
     public interface IImageService
     {
-        void HighLightImage();
+        void GetDiagramFile(string name = "new_diagram", int freq = 900, double gain = 17);
     }
 }

@@ -23,7 +23,7 @@ namespace DiagramDigitizer.Controllers
 
         public IActionResult Index()
         {
-            _imageService.HighLightImage();
+            _imageService.GetDiagramFile();
             return View();
         }
 
